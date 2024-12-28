@@ -1,0 +1,188 @@
+import pygame
+import sys
+import random
+import math
+
+# Initialize pygame
+pygame.init()
+
+# Screen dimensions
+SCREEN_WIDTH, SCREEN_HEIGHT = 1200, 900
+
+# Colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GREEN = (0, 255, 0)
+
+# Tank dimensions
+TANK_WIDTH, TANK_HEIGHT = 40, 40
+BULLET_WIDTH, BULLET_HEIGHT = 10, 10
+HEALTH_BAR_WIDTH = 50
+HEALTH_BAR_HEIGHT = 5
+
+# Movement speed
+TANK_SPEED = 5
+BOT_SPEED = 1.5
+BULLET_SPEED = 10
+ROTATION_SPEED = 3
+GUN_ROTATION_SPEED = 5
+
+# Initialize screen
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Player vs AI Tank Game")
+
+# Clock for controlling frame rate
+clock = pygame.time.Clock()
+
+# Tank class
+class Tank:
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.health = 5
+        self.bullets = []
+        self.angle = 0  # Tank angle in degrees
+        self.gun_angle = 0  # Gun angle in degrees
+
+    def move(self, keys=None, up=None, down=None, left=None, right=None, speed=TANK_SPEED):
+        if keys:
+            if keys[up]:
+                self.x += math.cos(math.radians(self.angle)) * speed
+                self.y -= math.sin(math.radians(self.angle)) * speed
+            if keys[down]:
+                self.x -= math.cos(math.radians(self.angle)) * speed
+                self.y += math.sin(math.radians(self.angle)) * speed
+            if keys[left]:
+                self.angle = (self.angle + ROTATION_SPEED) % 360
+            if keys[right]:
+                self.angle = (self.angle - ROTATION_SPEED) % 360
+
+            # Keep tank within screen bounds
+            self.x = max(0, min(self.x, SCREEN_WIDTH - TANK_WIDTH))
+            self.y = max(0, min(self.y, SCREEN_HEIGHT - TANK_HEIGHT))
+
+    def control_gun(self, keys, rotate_left, rotate_right):
+        if keys[rotate_left]:
+            self.gun_angle = (self.gun_angle + GUN_ROTATION_SPEED) % 360
+        if keys[rotate_right]:
+            self.gun_angle = (self.gun_angle - GUN_ROTATION_SPEED) % 360
+
+    def shoot(self):
+        bullet_x = self.x + TANK_WIDTH / 2 + math.cos(math.radians(self.gun_angle)) * TANK_WIDTH
+        bullet_y = self.y + TANK_HEIGHT / 2 - math.sin(math.radians(self.gun_angle)) * TANK_HEIGHT
+        bullet = pygame.Rect(bullet_x - BULLET_WIDTH / 2, bullet_y - BULLET_HEIGHT / 2, BULLET_WIDTH, BULLET_HEIGHT)
+        self.bullets.append((bullet, self.gun_angle))
+
+    def bot_chase_and_shoot(self, target):
+        # Calculate angle to target
+        dx = target.x - self.x
+        dy = target.y - self.y
+        target_angle = math.degrees(math.atan2(-dy, dx)) % 360
+
+        # Rotate gun towards the target
+        angle_diff = (target_angle - self.gun_angle) % 360
+        if angle_diff > 180:
+            self.gun_angle = (self.gun_angle - GUN_ROTATION_SPEED) % 360
+        else:
+            self.gun_angle = (self.gun_angle + GUN_ROTATION_SPEED) % 360
+
+        # Move towards the target
+        if math.hypot(dx, dy) > 50:  # Maintain some distance
+            self.x += math.cos(math.radians(self.angle)) * BOT_SPEED
+            self.y -= math.sin(math.radians(self.angle)) * BOT_SPEED
+
+        # Ensure bot stays within screen bounds
+        self.x = max(0, min(self.x, SCREEN_WIDTH - TANK_WIDTH))
+        self.y = max(0, min(self.y, SCREEN_HEIGHT - TANK_HEIGHT))
+
+        # Shoot occasionally
+        if random.randint(1, 50) == 1:  # Random chance to shoot
+            self.shoot()
+
+    def draw(self):
+        # Create a surface for the tank
+        tank_surface = pygame.Surface((TANK_WIDTH, TANK_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.rect(tank_surface, self.color, (0, 0, TANK_WIDTH, TANK_HEIGHT))
+
+        # Draw gun (rotating separately from tank)
+        gun_length = 30
+        gun_width = 6
+        gun_end_x = self.x + TANK_WIDTH / 2 + math.cos(math.radians(self.gun_angle)) * gun_length
+        gun_end_y = self.y + TANK_HEIGHT / 2 - math.sin(math.radians(self.gun_angle)) * gun_length
+        pygame.draw.line(screen, WHITE, (self.x + TANK_WIDTH / 2, self.y + TANK_HEIGHT / 2), (gun_end_x, gun_end_y), gun_width)
+
+        # Rotate the surface
+        rotated_surface = pygame.transform.rotate(tank_surface, self.angle)
+
+        # Get the new rect for positioning
+        tank_rect = rotated_surface.get_rect(center=(self.x + TANK_WIDTH / 2, self.y + TANK_HEIGHT / 2))
+
+        # Draw the rotated tank
+        screen.blit(rotated_surface, tank_rect)
+
+        # Draw bullets
+        for bullet, angle in self.bullets:
+            pygame.draw.rect(screen, WHITE, bullet)
+
+        # Draw health bar
+        health_bar_x = self.x + (TANK_WIDTH - HEALTH_BAR_WIDTH) // 2
+        health_bar_y = self.y - 10
+        pygame.draw.rect(screen, RED, (health_bar_x, health_bar_y, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT))
+        pygame.draw.rect(screen, GREEN, (health_bar_x, health_bar_y, HEALTH_BAR_WIDTH * (self.health / 5), HEALTH_BAR_HEIGHT))
+
+# Tanks
+player_tank = Tank(100, 300, RED)
+bot_tank = Tank(600, 300, BLUE)
+
+# Game loop
+running = True
+while running:
+    screen.fill(BLACK)
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                player_tank.shoot()
+
+    # Handle keys
+    keys = pygame.key.get_pressed()
+    player_tank.move(keys, pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT)
+    player_tank.control_gun(keys, pygame.K_a, pygame.K_d)
+
+    # Bot logic
+    bot_tank.bot_chase_and_shoot(player_tank)
+
+    # Move bullets
+    for tank in [player_tank, bot_tank]:
+        for bullet, angle in tank.bullets[:]:
+            bullet.x += math.cos(math.radians(angle)) * BULLET_SPEED
+            bullet.y -= math.sin(math.radians(angle)) * BULLET_SPEED
+
+            # Collision and boundary checks
+            if bullet.colliderect(pygame.Rect(bot_tank.x, bot_tank.y, TANK_WIDTH, TANK_HEIGHT)) and tank == player_tank:
+                bot_tank.health -= 1
+                tank.bullets.remove((bullet, angle))
+            elif bullet.colliderect(pygame.Rect(player_tank.x, player_tank.y, TANK_WIDTH, TANK_HEIGHT)) and tank == bot_tank:
+                player_tank.health -= 1
+                tank.bullets.remove((bullet, angle))
+            elif bullet.y < 0 or bullet.y > SCREEN_HEIGHT or bullet.x < 0 or bullet.x > SCREEN_WIDTH:
+                tank.bullets.remove((bullet, angle))
+
+    # Draw tanks and bullets
+    player_tank.draw()
+    bot_tank.draw()
+
+    # Check health
+    if player_tank.health <= 0 or bot_tank.health <= 0:
+        running = False
+
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
+sys.exit()
